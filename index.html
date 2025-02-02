@@ -2,6 +2,12 @@
 <html>
 
 <body>
+    <h2>Select the path to your "Game.log" file, inside the game root folder:</h2>
+    <h4>
+        If an error about permissions shows up (it usually does if your game is installed in the default location), you need to create a hard link from the file location to a readable location (for example the Downloads folder), using CMD AS ADMINISTRATOR and a command like this:<br>
+        mklink /h "C:\Users\zimm1\Downloads\Game.log" "C:\Program Files\Roberts Space Industries\StarCitizen\LIVE\Game.log"<br>
+        Once done (you only need to do this the first time), select the new file location:
+    </h4>
     <div id="select-file">
         <button onclick="selectFile()">Choose Game.log file</button>
         <select name="detail" id="detail">
