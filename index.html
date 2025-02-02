@@ -1,52 +1,581 @@
 <!DOCTYPE html>
 <html>
 
-<head>
+<body>
+    <p id="select-file"><button onclick="selectFile()">Choose Game.log file</button></p>
+    <div id="main-div" style="background: #fff; min-height: 100px"></div>
+    <div id="org-div" style="background: #fff; min-height: 100px"></div>
+    <div id="player-div" style="background: #fff; min-height: 100px"></div>
+
     <script>
         let fileHandle;
         async function selectFile() {
             [fileHandle] = await window.showOpenFilePicker();
-            let filenameDiv = document.getElementById('filenameDiv');
-            filenameDiv.innerHTML = fileHandle.name;
-            readFile();
+            let selectFileDiv = document.getElementById('select-file');
+            selectFileDiv.style = {display: 'none'};
         };
 
-        async function readFile() {
-            const file = await fileHandle.getFile();
-            const contents = await file.text();
-            let outputDiv = document.getElementById('outputDiv');
-            outputDiv.innerHTML = contents;
+        // rsi_api.js
+        async function fetchCitizen(name, rsiUrl = "https://robertsspaceindustries.com/en", endpoint = 'citizens', skipOrgs = false) {
+            const result = {};
+            const citizenUrl = `${rsiUrl}/${endpoint}/${name}`;
+            const orgApiUrl = `${rsiUrl}/api/orgs/getOrgMembers`;
+
+            try {
+                const page = await fetch(citizenUrl);
+                if (page.status === 404) {
+                    return result;
+                }
+                if (page.status !== 200) {
+                    console.log(`RSI api rate limit, retrying...`);
+                    // await new Promise(resolve => setTimeout(resolve, 5000)); // Simplified retry wait
+                    // return fetchCitizen(name, rsiUrl, endpoint, skipOrgs);
+                    return false
+                }
+                if (page.status === 200) {
+                    const text = await page.text();
+                    const parser = new DOMParser();
+                    const soup = parser.parseFromString(text, 'text/html');
+
+                    const infoValues = Array.from(soup.querySelectorAll(".info .value")).map(el => el.textContent);
+                    result['username'] = infoValues[0] || '';
+                    result['handle'] = infoValues[1] || '';
+                    result['title'] = infoValues[2] || '';
+                    const titleIcon = soup.querySelector(".info .icon img");
+                    result['title_icon'] = titleIcon ? `${rsiUrl}${titleIcon.getAttribute('src')}` : '';
+                    const avatar = soup.querySelector('.profile .thumb img');
+                    result['avatar'] = avatar ? `${rsiUrl}${avatar.getAttribute('src').replace(/^\//, '')}` : '';
+                    result['url'] = citizenUrl;
+
+                    const bio = soup.querySelector('.profile-content .bio');
+                    result['bio'] = bio ? bio.textContent.trim().replace('\nBio', '').trim() : '';
+                    const citizenRecord = soup.querySelector('.citizen-record .value');
+                    result['citizen_record'] = citizenRecord ? citizenRecord.textContent : '';
+                    try {
+                        result['citizen_record'] = parseInt(result['citizen_record'].replace(/[^\d]/g, '')); // Parse int, handle non-numeric
+                    } catch (e) { }
+
+                    const entries = Array.from(soup.querySelectorAll('.profile-content > .left-col .entry'));
+                    const profileData = entries.reduce((acc, entry) => {
+                        const key = entry.querySelector('span').textContent;
+                        const value = entry.querySelector('.value').textContent.trim().replace(/\s+/g, ' ').replace(' ,', ',');
+                        acc[key] = value;
+                        return acc;
+                    }, {});
+
+                    result['enlisted'] = profileData['Enlisted'] || '';
+                    result['location'] = profileData['Location'] || '';
+                    result['languages'] = (profileData['Fluency'] || '').replace(',', '').split(' ');
+
+                    result['has_redacted'] = false;
+
+                    if (!skipOrgs) {
+                        const orgsPage = await fetch(`${citizenUrl}/organizations`);
+                        if (orgsPage.status === 200) {
+                            const orgsText = await orgsPage.text();
+                            const orgsSoup = parser.parseFromString(orgsText, 'text/html');
+                            result['orgs'] = [];
+
+                            const orgs = orgsSoup.querySelectorAll('.orgs-content .org');
+                            for (const org of orgs) {
+                                const orgInfo = Array.from(org.querySelectorAll('.info .entry .value')).map(el => el.textContent);
+                                const [orgname, sid, rank] = orgInfo;
+
+                                if (orgname.startsWith('\xa0')) {
+                                    result['has_redacted'] = true;
+                                    continue;
+                                }
+
+                                const roles = [];
+                                let memberCount = null;
+                                const r = await fetch(orgApiUrl, {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                                    body: `symbol=${sid}&search=${name}`
+                                });
+                                if (r.status === 200) {
+                                    const rJson = await r.json();
+                                    if (rJson.success === 1) {
+                                        const apiSoup = parser.parseFromString(rJson.data.html, 'text/html');
+                                        const roleElements = apiSoup.querySelectorAll('.rolelist .role');
+                                        roles.push(...Array.from(roleElements).map(role => role.textContent));
+                                        const countElement = org.querySelector('.thumb span');
+                                        if (countElement) {
+                                            memberCount = parseInt(countElement.textContent.split(' ')[0]);
+                                        }
+                                    }
+                                }
+
+                                const orgUrl = `${rsiUrl}/orgs/${sid}`;
+                                const icon = org.querySelector('.thumb img');
+                                const orgData = {
+                                    name: orgname,
+                                    sid: sid,
+                                    rank: rank,
+                                    roles: roles,
+                                    icon: icon ? `${rsiUrl}${icon.getAttribute('src').replace(/^\//, '')}` : '',
+                                    member_count: memberCount,
+                                    url: orgUrl
+                                };
+                                result['orgs'].push(orgData);
+                            }
+                        }
+                    }
+                }
+            } catch (e) {
+                console.error(e);
+            }
+            return result;
         }
 
-        window.addEventListener('paste', handleInput)
+        async function getPlayerInfo(handle) {
+            const playerInfo = await fetchCitizen(handle);
 
-        let driveHandles = {}
-        async function handleInput(event) {
-            console.log(event)
-            const drives = [...dataTransfer.files].map(file => file.name.endsWith('_drive') && file.name[0])
-            const handles = await Promise.all([...dataTransfer.items].map(item => item.getAsFileSystemHandle()))
-            currentHandle = handles[0]
-            for (let i = 0; i < drives.length; ++i) {
-                const drive = drives[i]
-                if (drive) {
-                    driveHandles[drive] = handles[i]
+            if (!playerInfo.handle) {
+                return null;
+            }
+
+            if (playerInfo.citizen_record && typeof playerInfo.citizen_record === 'string') {
+                playerInfo.citizen_record = parseInt(playerInfo.citizen_record) || null;
+            }
+
+            const makeHttps = (url) => url ? url.replace(/^http:\/\//, 'https://') : url; // Ensure HTTPS
+
+            return {
+                handle: playerInfo.handle,
+                found: true,
+                title: playerInfo.title,
+                title_icon: makeHttps(playerInfo.title_icon),
+                avatar: makeHttps(playerInfo.avatar),
+                bio: playerInfo.bio,
+                location: playerInfo.location,
+                languages: playerInfo.languages,
+                citizen_record: playerInfo.citizen_record,
+                enlisted: playerInfo.enlisted ? new Date(playerInfo.enlisted) : null, // Convert to Date object
+                has_redacted: playerInfo.has_redacted,
+                url: playerInfo.url,
+                orgs: (playerInfo.orgs || []).map(o => ({
+                    name: o.name,
+                    sid: o.sid,
+                    icon: makeHttps(o.icon),
+                    member_count: o.member_count,
+                    url: o.url
+                }))
+            };
+        }
+
+        // main.js
+        const DETAIL_LIST = [
+            'FULL',
+            'KILL ONLY',
+            'CONTESTED MODE',
+            'CONTESTED MODE WITH ACTOR STALL'
+        ];
+
+        let DETAIL = 0; // Default value
+
+        const LINE_BLACKLIST = [
+            'SoundListener',
+            'Radiation_Hazard'
+        ];
+
+        const PLAYERS_BLACKLIST = [
+            'unknown',
+            'zimm1'
+        ];
+
+        let PLAYERS = {};
+        let ORGS = {};
+        let SEARCHED_NAMES = new Set();
+
+        const SUB_DICT = {
+            'RastarInteriorGridHost': 'interior',
+            'StreamingSOC_hangar': (text) => {
+                const parts = text.split("_");
+                const type = parts[2];
+                const location = parts[parts.length - 1];
+                return `hangar_${type}_${location}`;
+            },
+            'rstop_elev': 'elevator',
+            'ksar_rifle_energy': 'karna',
+            'ksar_shotgun_balistic': 'devastator',
+            'behr_lmg_ballistic': 'fs9',
+            'behr_rifle_ballistic': 'p4',
+            'behr_smg_ballistic': 'p8',
+            'gmni_smg_ballistic': 'c54',
+            'gmni_lmg_ballistic': 'f55',
+            'klwe_rifle_energy': 'gallant'
+        };
+
+        const CONTESTED_ZONE_MODE_ZONE_WHITELIST = [
+            'rs_opendungeon_rund',
+            'ab_pyro_int_dung',
+            'contestedzone'
+        ];
+
+
+        async function searchPlayer(name, date) {
+            if (PLAYERS_BLACKLIST.includes(name)) {
+                return;
+            }
+
+            if (name in PLAYERS) {
+                PLAYERS[name].date = date;
+                for (const org of PLAYERS[name].orgs) {
+                    if (org.sid in ORGS) {
+                        ORGS[org.sid].date = date;
+                    }
+                }
+                return;
+            }
+
+            if (SEARCHED_NAMES.has(name)) {
+                return;
+            }
+
+            SEARCHED_NAMES.add(name);
+
+            const player = await getPlayerInfo(name);
+            
+            playerSearchCallback([player, date]);
+        }
+
+        function playerSearchCallback(data) {
+            const [player, date] = data;
+            console.log({player})
+
+            if (!player) {
+                return;
+            }
+
+            const orgStrings = player.orgs.map(org => `<span class="math-inline">\{org\.name\}\(</span>{org.url})`);
+            console.log(`<span class="math-inline">\{player\.handle\}\(</span>{player.url}) [${orgStrings.join(', ')}]`);
+
+            PLAYERS[player.handle] = {
+                handle: player.handle,
+                date: date,
+                enlisted: player.enlisted,
+                orgs: player.orgs,
+                has_redacted: player.has_redacted,
+                location: player.location
+            };
+
+            for (const org of player.orgs) {
+                if (!(org.sid in ORGS)) {
+                    ORGS[org.sid] = {
+                        name: org.name,
+                        date: date,
+                        member_count: org.member_count,
+                        players: [player.handle]
+                    };
+                }
+
+                ORGS[org.sid].date = date;
+                if (!ORGS[org.sid].players.includes(player.handle)) {
+                    ORGS[org.sid].players.push(player.handle);
                 }
             }
-            let div = document.getElementById('handles');
-            div.innerHTML = driveHandles.join(', ');
-            console.log({ driveHandles })
         }
-    </script>
-</head>
 
-<body>
-    <div style="margin: 20px;">
-        <p><button onclick="selectFile()">Choose template file</button></p>
-        <p><button onclick="readFile()">Reload</button></p>
-        <div id="filenameDiv" style="background: #fff;"></div>
-    </div>
-    <div id="outputDiv" style="background: #fff; min-height: 100px;"></div>
-    <div id="handles" style="background: #fff; min-height: 100px;"></div>
+
+        async function subText(text, date) {
+            if (text.length > 0 && text[0] === '@') {
+                text = text.slice(1);
+            }
+
+            const subKey = Object.keys(SUB_DICT).find(key => text.includes(key));
+            if (subKey) {
+                const sub = SUB_DICT[subKey];
+                return `[${typeof sub === 'function' ? sub(text) : sub}]`;
+            }
+
+            const parts = text.split("_");
+            if (parts.length >= 3 && parts[parts.length - 1].length >= 10 && !isNaN(parts[parts.length - 1])) {
+                text = parts.slice(0, -1).join("_");
+            } else if (date) {
+                await searchPlayer(text, date);
+            }
+
+            return text;
+        }
+
+        function formatKill(contestedMode = false) {
+            return async function (line) {
+                const date = getDateFromLine(line);
+                const parts = line.split("'");
+                const zone = await subText(parts[3]);
+                if (contestedMode && !CONTESTED_ZONE_MODE_ZONE_WHITELIST.some(contested => zone.includes(contested))) {
+                    return false;
+                }
+
+                const killed = await subText(parts[1], date);
+                const killer = await subText(parts[5], date);
+                const weapon = await subText(parts[7]);
+
+                if (killed === killer && killer === weapon) {
+                    return `${killer} suicided in ${zone}`;
+                }
+
+                return `${killer} killed ${killed} with ${weapon} in ${zone}`;
+            };
+        }
+
+        const DESTROY_STATES = {
+            '0 to 1': 'soft deathed',
+            '1 to 2': 'kill confirmed',
+            '0 to 2': 'exploded'
+        };
+
+        async function formatDestroy(line) {
+            const date = getDateFromLine(line);
+            const parts = line.split("'");
+            const vehicle = await subText(parts[1]);
+            const driver = await subText(parts[5], date);
+            const killer = await subText(parts[7], date);
+            const method = await subText(parts[9]);
+
+            const stateMatch = line.match(/advanced from destroy level (.+) caused by/);
+            const state = stateMatch ? stateMatch[1] : null;
+            const formattedState = DESTROY_STATES[state] || state; // Handle potential missing states
+
+
+            return `vehicle ${vehicle} of ${driver} ${formattedState} by ${killer} with ${method}`;
+        }
+
+
+        async function formatQt(line) {
+            const date = getDateFromLine(line);
+            const name = await subText(line.split("-- Entity Trying To QT: ")[1]);
+            await subText(name, date);
+
+            return `${name} is in QT`;
+        }
+
+        async function formatActorStall(line) {
+            const date = getDateFromLine(line);
+            const name = await subText(line.split("Actor stall detected, Player: ")[1].split(",")[0]);
+            await subText(name, date);
+
+            return `${name}: stall`;
+        }
+
+        function formatEntityZone(entering) {
+            return async function (line) {
+                const date = getDateFromLine(line);
+                const parts = line.split('[');
+                const location = await subText(parts[3].split(']')[0]);
+                const entity = await subText(parts[5].split(']')[0], date);
+                const owner = await subText(parts[9].split(']')[0], date);
+
+                return `${entity} ${entering ? 'entering' : 'exiting'} ${location} of ${owner}`;
+            };
+        }
+
+        function formatRespawn(alreadySeen = false) {
+            return async function (line) {
+                const date = getDateFromLine(line);
+                const player = line.split("'")[1];
+                if (alreadySeen && !(player in PLAYERS)) {
+                    return false;
+                }
+                const formattedPlayer = await subText(player, date);
+
+                const parts = line.split('"');
+                const hospital = await subText(parts[1]);
+                const location = await subText(parts[3]);
+                const inLocation = !line.includes('IS NOT');
+
+                return `${formattedPlayer} respawning at ${hospital} ${inLocation ? 'IN' : 'NOT IN'} ${location}`;
+            };
+        }
+
+        function formatCorpse(alreadySeen = false) {
+            return async function(line) {
+                const date = getDateFromLine(line);
+                const player = line.split("'")[1];
+                if (alreadySeen && !(player in PLAYERS)) {
+                    return false;
+                }
+                const formattedPlayer = await subText(player, date);
+        
+                const hasCorpse = line.includes('IsCorpseEnabled: Y');
+        
+                return `${formattedPlayer} corpse ${hasCorpse ? 'IS' : 'IS NOT'} LOOTABLE`;
+            };
+        }
+        
+        function formatCorpseMovable(alreadySeen = false) {
+            return async function(line) {
+                const date = getDateFromLine(line);
+                const player = line.split("'")[1];
+                if (alreadySeen && !(player in PLAYERS)) {
+                    return false;
+                }
+                const formattedPlayer = await subText(player, date);
+        
+                return `${formattedPlayer} corpse IS MOVABLE`;
+            };
+        }
+        
+        const FORMAT_FN_DICT_LIST = [
+            {
+                'CActor::Kill:': formatKill(),
+                'CVehicle::OnAdvanceDestroyLevel:': formatDestroy,
+                '-- Entity Trying To QT:': formatQt,
+                'Actor stall detected': formatActorStall,
+                'OnEntityEnterZone': formatEntityZone(true),
+                'OnEntityLeaveZone': formatEntityZone(false),
+                'DoesLocationContainHospital: Nearby hospital': formatRespawn(false),
+                'IsCorpseEnabled: ': formatCorpse(false),
+                'Running corpsify for corpse': formatCorpseMovable(false)
+            },
+            {
+                'CActor::Kill:': formatKill(),
+                'CVehicle::OnAdvanceDestroyLevel:': formatDestroy,
+                'Actor stall detected': formatActorStall,
+                'DoesLocationContainHospital: Nearby hospital': formatRespawn(false),
+                'IsCorpseEnabled: ': formatCorpse(false),
+                'Running corpsify for corpse': formatCorpseMovable(false)
+            },
+            {
+                'CActor::Kill:': formatKill(true),
+                'DoesLocationContainHospital: Nearby hospital': formatRespawn(true),
+                'IsCorpseEnabled: ': formatCorpse(true),
+                'Running corpsify for corpse': formatCorpseMovable(true)
+            },
+            {
+                'CActor::Kill:': formatKill(true),
+                'Actor stall detected': formatActorStall,
+                'DoesLocationContainHospital: Nearby hospital': formatRespawn(true),
+                'IsCorpseEnabled: ': formatCorpse(true),
+                'Running corpsify for corpse': formatCorpseMovable(true)
+            }
+        ];
+        
+        function formatDatetime(line) {
+            const date = getDateFromLine(line);
+            return formatDatetimeAgo(date);
+        }
+        
+        function getDateFromLine(line) {
+            const lineDate = line.split(">")[0].slice(1); // Corrected slice
+            return new Date(lineDate); // Directly create Date object
+        }
+        
+        function formatDatetimeAgo(lastDate) {
+            const now = new Date();
+            const timeDelta = now - lastDate; // Milliseconds difference
+            let seconds = Math.floor((timeDelta / 1000) - 3600); // Corrected subtraction and floor
+        
+            const hours = Math.floor(seconds / 3600);
+            seconds %= 3600;
+            const minutes = Math.floor(seconds / 60);
+            seconds %= 60;
+        
+            return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+        }
+        
+        
+        function formatPlayers() {
+            const players = Object.values(PLAYERS);
+            players.sort((a, b) => a.date - b.date); // Corrected sort
+            return players.map(p => `${p.handle}${p.enlisted ? ' ' + p.enlisted.toLocaleDateString('en-US', { month: 'short', year: '2-digit' }) : ''} (${p.orgs.length}${p.has_redacted ? '+R' : ''}) ${p.location.split(',')[0]}`);
+        }
+        
+        function formatOrgs() {
+            const orgs = Object.values(ORGS);
+            orgs.sort((a, b) => {
+                const dateDiff = a.date - b.date;
+                if (dateDiff !== 0) return dateDiff;
+                const playerLenDiff = len(a.players) - len(b.players);
+                if (playerLenDiff !== 0) return playerLenDiff;
+                return b.member_count - a.member_count; // Descending member count
+            });
+        
+            return orgs.map(o => `${o.name} (${o.players.length}/${o.member_count}) ${o.players.join(',')}`);
+        }
+        
+        
+        // ... (No equivalent to setClickthrough in browser environment)
+        
+        function setupWindow(windowElement) {
+            windowElement.style.width = '1000px';
+            windowElement.style.height = '150px';
+        
+            const textElement = document.createElement('div');
+            textElement.style.fontFamily = "Helvetica";
+            textElement.style.fontSize = "13px";
+            textElement.style.overflowY = 'scroll'; // Add scrollbar
+            textElement.style.height = '100%'; // Make the text area fill the window
+        
+            windowElement.appendChild(textElement);
+            windowElement.T = textElement; // Attach to the window element
+        }
+        
+        
+        async function updateWidgets() {
+            try {
+                const file = await fileHandle.getFile();
+                const contents = await file.text();
+                const lines = contents.split('\n');
+        
+                const out = [];
+                for (const line of lines) {
+                    if (LINE_BLACKLIST.some(entry => line.includes(entry))) {
+                        continue;
+                    }
+        
+                    const formatKey = Object.keys(FORMAT_FN_DICT_LIST[DETAIL]).find(key => line.includes(key));
+                    if (!formatKey) {
+                        continue;
+                    }
+        
+                    const date = formatDatetime(line);
+                    const text = await FORMAT_FN_DICT_LIST[DETAIL][formatKey](line);
+                    if (!text) {
+                        continue;
+                    }
+        
+                    out.push(`${date} ${text}`);
+                }
+        
+                if (out.length === 0) {
+                    SEARCHED_NAMES.clear();
+                    PLAYERS = {};
+                    ORGS = {};
+                }
+        
+                document.getElementById('main-div').T.innerHTML = out.join('<br>');
+                document.getElementById('org-div').T.innerHTML = formatOrgs().join('<br>');
+                document.getElementById('player-div').T.innerHTML = formatPlayers().join('<br>');
+
+                console.log({PLAYERS, ORGS})
+        
+            } catch (err) {
+                if (err.name !== 'AbortError') {
+                    console.error('Error opening file:', err);
+                }
+            }
+        
+            setTimeout(updateWidgets, 1000);
+        }
+        
+        // Initialization
+        async function initialize() {
+            // Get the detail level from URL parameters or use default
+            const urlParams = new URLSearchParams(window.location.search);
+            DETAIL = parseInt(urlParams.get('detail')) || 0;
+            console.log(`detail: ${DETAIL_LIST[DETAIL]}`);
+        
+            setupWindow(document.getElementById('main-div'));
+            setupWindow(document.getElementById('org-div'));
+            setupWindow(document.getElementById('player-div'));
+        
+            await updateWidgets();
+        }
+        
+        initialize();
+    </script>
 </body>
 
 </html>
