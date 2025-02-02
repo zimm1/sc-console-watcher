@@ -3,9 +3,8 @@
 
 <body>
     <p id="select-file"><button onclick="selectFile()">Choose Game.log file</button></p>
-    <div id="main-div" style="background: #fff; min-height: 100px"></div>
-    <div id="org-div" style="background: #fff; min-height: 100px"></div>
-    <div id="player-div" style="background: #fff; min-height: 100px"></div>
+    <div id="main-div" style="background: #fff; min-height: 100px; margin-top: 10px;"></div>
+    <div id="player-div" style="background: #fff; min-height: 100px; margin-top: 10px;"></div>
 
     <script>
         let fileHandle;
@@ -16,112 +15,17 @@
         };
 
         // rsi_api.js
-        async function fetchCitizen(name, rsiUrl = "https://robertsspaceindustries.com/en", endpoint = 'citizens', skipOrgs = false) {
+        async function fetchCitizen(name, rsiUrl = "https://robertsspaceindustries.com/en", endpoint = 'citizens') {
             const result = {};
             const citizenUrl = `${rsiUrl}/${endpoint}/${name}`;
-            const orgApiUrl = `${rsiUrl}/api/orgs/getOrgMembers`;
-
             try {
-                const page = await fetch(citizenUrl);
+                const page = await fetch(citizenUrl, { mode: 'no-cors'});
                 if (page.status === 404) {
                     return result;
                 }
-                if (page.status !== 200) {
-                    console.log(`RSI api rate limit, retrying...`);
-                    // await new Promise(resolve => setTimeout(resolve, 5000)); // Simplified retry wait
-                    // return fetchCitizen(name, rsiUrl, endpoint, skipOrgs);
-                    return false
-                }
-                if (page.status === 200) {
-                    const text = await page.text();
-                    const parser = new DOMParser();
-                    const soup = parser.parseFromString(text, 'text/html');
 
-                    const infoValues = Array.from(soup.querySelectorAll(".info .value")).map(el => el.textContent);
-                    result['username'] = infoValues[0] || '';
-                    result['handle'] = infoValues[1] || '';
-                    result['title'] = infoValues[2] || '';
-                    const titleIcon = soup.querySelector(".info .icon img");
-                    result['title_icon'] = titleIcon ? `${rsiUrl}${titleIcon.getAttribute('src')}` : '';
-                    const avatar = soup.querySelector('.profile .thumb img');
-                    result['avatar'] = avatar ? `${rsiUrl}${avatar.getAttribute('src').replace(/^\//, '')}` : '';
-                    result['url'] = citizenUrl;
-
-                    const bio = soup.querySelector('.profile-content .bio');
-                    result['bio'] = bio ? bio.textContent.trim().replace('\nBio', '').trim() : '';
-                    const citizenRecord = soup.querySelector('.citizen-record .value');
-                    result['citizen_record'] = citizenRecord ? citizenRecord.textContent : '';
-                    try {
-                        result['citizen_record'] = parseInt(result['citizen_record'].replace(/[^\d]/g, '')); // Parse int, handle non-numeric
-                    } catch (e) { }
-
-                    const entries = Array.from(soup.querySelectorAll('.profile-content > .left-col .entry'));
-                    const profileData = entries.reduce((acc, entry) => {
-                        const key = entry.querySelector('span').textContent;
-                        const value = entry.querySelector('.value').textContent.trim().replace(/\s+/g, ' ').replace(' ,', ',');
-                        acc[key] = value;
-                        return acc;
-                    }, {});
-
-                    result['enlisted'] = profileData['Enlisted'] || '';
-                    result['location'] = profileData['Location'] || '';
-                    result['languages'] = (profileData['Fluency'] || '').replace(',', '').split(' ');
-
-                    result['has_redacted'] = false;
-
-                    if (!skipOrgs) {
-                        const orgsPage = await fetch(`${citizenUrl}/organizations`);
-                        if (orgsPage.status === 200) {
-                            const orgsText = await orgsPage.text();
-                            const orgsSoup = parser.parseFromString(orgsText, 'text/html');
-                            result['orgs'] = [];
-
-                            const orgs = orgsSoup.querySelectorAll('.orgs-content .org');
-                            for (const org of orgs) {
-                                const orgInfo = Array.from(org.querySelectorAll('.info .entry .value')).map(el => el.textContent);
-                                const [orgname, sid, rank] = orgInfo;
-
-                                if (orgname.startsWith('\xa0')) {
-                                    result['has_redacted'] = true;
-                                    continue;
-                                }
-
-                                const roles = [];
-                                let memberCount = null;
-                                const r = await fetch(orgApiUrl, {
-                                    method: 'POST',
-                                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                                    body: `symbol=${sid}&search=${name}`
-                                });
-                                if (r.status === 200) {
-                                    const rJson = await r.json();
-                                    if (rJson.success === 1) {
-                                        const apiSoup = parser.parseFromString(rJson.data.html, 'text/html');
-                                        const roleElements = apiSoup.querySelectorAll('.rolelist .role');
-                                        roles.push(...Array.from(roleElements).map(role => role.textContent));
-                                        const countElement = org.querySelector('.thumb span');
-                                        if (countElement) {
-                                            memberCount = parseInt(countElement.textContent.split(' ')[0]);
-                                        }
-                                    }
-                                }
-
-                                const orgUrl = `${rsiUrl}/orgs/${sid}`;
-                                const icon = org.querySelector('.thumb img');
-                                const orgData = {
-                                    name: orgname,
-                                    sid: sid,
-                                    rank: rank,
-                                    roles: roles,
-                                    icon: icon ? `${rsiUrl}${icon.getAttribute('src').replace(/^\//, '')}` : '',
-                                    member_count: memberCount,
-                                    url: orgUrl
-                                };
-                                result['orgs'].push(orgData);
-                            }
-                        }
-                    }
-                }
+                result['handle'] = name;
+                result['url'] = citizenUrl;
             } catch (e) {
                 console.error(e);
             }
@@ -131,37 +35,11 @@
         async function getPlayerInfo(handle) {
             const playerInfo = await fetchCitizen(handle);
 
-            if (!playerInfo.handle) {
+            if (!playerInfo.url) {
                 return null;
             }
 
-            if (playerInfo.citizen_record && typeof playerInfo.citizen_record === 'string') {
-                playerInfo.citizen_record = parseInt(playerInfo.citizen_record) || null;
-            }
-
-            const makeHttps = (url) => url ? url.replace(/^http:\/\//, 'https://') : url; // Ensure HTTPS
-
-            return {
-                handle: playerInfo.handle,
-                found: true,
-                title: playerInfo.title,
-                title_icon: makeHttps(playerInfo.title_icon),
-                avatar: makeHttps(playerInfo.avatar),
-                bio: playerInfo.bio,
-                location: playerInfo.location,
-                languages: playerInfo.languages,
-                citizen_record: playerInfo.citizen_record,
-                enlisted: playerInfo.enlisted ? new Date(playerInfo.enlisted) : null, // Convert to Date object
-                has_redacted: playerInfo.has_redacted,
-                url: playerInfo.url,
-                orgs: (playerInfo.orgs || []).map(o => ({
-                    name: o.name,
-                    sid: o.sid,
-                    icon: makeHttps(o.icon),
-                    member_count: o.member_count,
-                    url: o.url
-                }))
-            };
+            return playerInfo;
         }
 
         // main.js
@@ -185,7 +63,6 @@
         ];
 
         let PLAYERS = {};
-        let ORGS = {};
         let SEARCHED_NAMES = new Set();
 
         const SUB_DICT = {
@@ -221,11 +98,6 @@
 
             if (name in PLAYERS) {
                 PLAYERS[name].date = date;
-                for (const org of PLAYERS[name].orgs) {
-                    if (org.sid in ORGS) {
-                        ORGS[org.sid].date = date;
-                    }
-                }
                 return;
             }
 
@@ -248,33 +120,10 @@
                 return;
             }
 
-            const orgStrings = player.orgs.map(org => `<span class="math-inline">\{org\.name\}\(</span>{org.url})`);
-            console.log(`<span class="math-inline">\{player\.handle\}\(</span>{player.url}) [${orgStrings.join(', ')}]`);
-
             PLAYERS[player.handle] = {
                 handle: player.handle,
-                date: date,
-                enlisted: player.enlisted,
-                orgs: player.orgs,
-                has_redacted: player.has_redacted,
-                location: player.location
+                url: player.url,
             };
-
-            for (const org of player.orgs) {
-                if (!(org.sid in ORGS)) {
-                    ORGS[org.sid] = {
-                        name: org.name,
-                        date: date,
-                        member_count: org.member_count,
-                        players: [player.handle]
-                    };
-                }
-
-                ORGS[org.sid].date = date;
-                if (!ORGS[org.sid].players.includes(player.handle)) {
-                    ORGS[org.sid].players.push(player.handle);
-                }
-            }
         }
 
 
@@ -465,7 +314,7 @@
         function formatDatetimeAgo(lastDate) {
             const now = new Date();
             const timeDelta = now - lastDate; // Milliseconds difference
-            let seconds = Math.floor((timeDelta / 1000) - 3600); // Corrected subtraction and floor
+            let seconds = Math.floor((timeDelta / 1000)); // Corrected subtraction and floor
         
             const hours = Math.floor(seconds / 3600);
             seconds %= 3600;
@@ -479,37 +328,19 @@
         function formatPlayers() {
             const players = Object.values(PLAYERS);
             players.sort((a, b) => a.date - b.date); // Corrected sort
-            return players.map(p => `${p.handle}${p.enlisted ? ' ' + p.enlisted.toLocaleDateString('en-US', { month: 'short', year: '2-digit' }) : ''} (${p.orgs.length}${p.has_redacted ? '+R' : ''}) ${p.location.split(',')[0]}`);
-        }
-        
-        function formatOrgs() {
-            const orgs = Object.values(ORGS);
-            orgs.sort((a, b) => {
-                const dateDiff = a.date - b.date;
-                if (dateDiff !== 0) return dateDiff;
-                const playerLenDiff = len(a.players) - len(b.players);
-                if (playerLenDiff !== 0) return playerLenDiff;
-                return b.member_count - a.member_count; // Descending member count
-            });
-        
-            return orgs.map(o => `${o.name} (${o.players.length}/${o.member_count}) ${o.players.join(',')}`);
+            return players.map(p => `${p.handle} (<a target=”_blank” href="${p.url}">${p.url}</a>)`);
         }
         
         
         // ... (No equivalent to setClickthrough in browser environment)
         
         function setupWindow(windowElement) {
-            windowElement.style.width = '1000px';
+            windowElement.style.width = '100%';
             windowElement.style.height = '150px';
-        
-            const textElement = document.createElement('div');
-            textElement.style.fontFamily = "Helvetica";
-            textElement.style.fontSize = "13px";
-            textElement.style.overflowY = 'scroll'; // Add scrollbar
-            textElement.style.height = '100%'; // Make the text area fill the window
-        
-            windowElement.appendChild(textElement);
-            windowElement.T = textElement; // Attach to the window element
+            
+            windowElement.style.fontFamily = "Helvetica";
+            windowElement.style.fontSize = "13px";
+            windowElement.style.overflowY = 'scroll'; // Add scrollbar
         }
         
         
@@ -542,15 +373,15 @@
                 if (out.length === 0) {
                     SEARCHED_NAMES.clear();
                     PLAYERS = {};
-                    ORGS = {};
                 }
         
-                document.getElementById('main-div').T.innerHTML = out.join('<br>');
-                document.getElementById('org-div').T.innerHTML = formatOrgs().join('<br>');
-                document.getElementById('player-div').T.innerHTML = formatPlayers().join('<br>');
+                const mainDiv = document.getElementById('main-div');
+                mainDiv.innerHTML = out.join('<br>');
+                mainDiv.scrollTop = mainDiv.scrollHeight;
 
-                console.log({PLAYERS, ORGS})
-        
+                const playerDiv = document.getElementById('player-div')
+                playerDiv.innerHTML = formatPlayers().join('<br>');
+                playerDiv.scrollTop = playerDiv.scrollHeight;
             } catch (err) {
                 if (err.name !== 'AbortError') {
                     console.error('Error opening file:', err);
@@ -568,7 +399,6 @@
             console.log(`detail: ${DETAIL_LIST[DETAIL]}`);
         
             setupWindow(document.getElementById('main-div'));
-            setupWindow(document.getElementById('org-div'));
             setupWindow(document.getElementById('player-div'));
         
             await updateWidgets();
