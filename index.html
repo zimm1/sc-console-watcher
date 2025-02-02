@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <script>
+        let fileHandle;
+        async function selectFile() {
+            [fileHandle] = await window.showOpenFilePicker();
+            let filenameDiv = document.getElementById('filenameDiv');
+            filenameDiv.innerHTML = fileHandle.name;
+            readFile();
+        };
+
+        async function readFile() {
+            const file = await fileHandle.getFile();
+            const contents = await file.text();
+            let outputDiv = document.getElementById('outputDiv');
+            outputDiv.innerHTML = contents;
+        }
+
+        window.addEventListener('paste', handleInput)
+
+        let driveHandles = {}
+        async function handleInput(event) {
+            console.log(event)
+            const drives = [...dataTransfer.files].map(file => file.name.endsWith('_drive') && file.name[0])
+            const handles = await Promise.all([...dataTransfer.items].map(item => item.getAsFileSystemHandle()))
+            currentHandle = handles[0]
+            for (let i = 0; i < drives.length; ++i) {
+                const drive = drives[i]
+                if (drive) {
+                    driveHandles[drive] = handles[i]
+                }
+            }
+            let div = document.getElementById('handles');
+            div.innerHTML = driveHandles.join(', ');
+            console.log({ driveHandles })
+        }
+    </script>
+</head>
+
+<body>
+    <div style="margin: 20px;">
+        <p><button onclick="selectFile()">Choose template file</button></p>
+        <p><button onclick="readFile()">Reload</button></p>
+        <div id="filenameDiv" style="background: #fff;"></div>
+    </div>
+    <div id="outputDiv" style="background: #fff; min-height: 100px;"></div>
+    <div id="handles" style="background: #fff; min-height: 100px;"></div>
+</body>
+
+</html>
