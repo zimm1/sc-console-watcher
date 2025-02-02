@@ -2,7 +2,15 @@
 <html>
 
 <body>
-    <p id="select-file"><button onclick="selectFile()">Choose Game.log file</button></p>
+    <div id="select-file">
+        <button onclick="selectFile()">Choose Game.log file</button>
+        <select name="detail" id="detail">
+            <option value="0" selected="selected">FULL</option>
+            <option value="1">KILL ONLY</option>
+            <option value="2">CONTESTED MODE</option>
+            <option value="3">CONTESTED MODE WITH ACTOR STALL</option>
+        </select>
+    </div>
     <div id="main-div" style="background: #fff; min-height: 100px; margin-top: 10px;"></div>
     <div id="player-div" style="background: #fff; min-height: 100px; margin-top: 10px;"></div>
 
@@ -345,6 +353,8 @@
         
         
         async function updateWidgets() {
+            DETAIL = parseInt(document.getElementById('detail').value) || 0;
+
             try {
                 const file = await fileHandle.getFile();
                 const contents = await file.text();
@@ -395,9 +405,7 @@
         async function initialize() {
             // Get the detail level from URL parameters or use default
             const urlParams = new URLSearchParams(window.location.search);
-            DETAIL = parseInt(urlParams.get('detail')) || 0;
-            console.log(`detail: ${DETAIL_LIST[DETAIL]}`);
-        
+
             setupWindow(document.getElementById('main-div'));
             setupWindow(document.getElementById('player-div'));
         
