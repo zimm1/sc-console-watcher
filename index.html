@@ -4,8 +4,11 @@
 <body>
     <h2>Select the path to your "Game.log" file, inside the game root folder:</h2>
     <h4>
-        If an error about permissions shows up (it usually does if your game is installed in the default location), you need to create a hard link from the file location to a readable location (for example the Downloads folder), using CMD AS ADMINISTRATOR and a command like this:<br>
-        mklink /h "C:\Users\zimm1\Downloads\Game.log" "C:\Program Files\Roberts Space Industries\StarCitizen\LIVE\Game.log"<br>
+        If an error about permissions shows up (it usually does if your game is installed in the default location), you
+        need to create a hard link from the file location to a readable location (for example the Downloads folder),
+        using CMD AS ADMINISTRATOR and a command like this:<br>
+        mklink /h "C:\Users\zimm1\Downloads\Game.log" "C:\Program Files\Roberts Space
+        Industries\StarCitizen\LIVE\Game.log"<br>
         Once done (you only need to do this the first time), select the new file location:
     </h4>
     <div id="select-file">
@@ -21,42 +24,13 @@
     <div id="player-div" style="background: #fff; min-height: 100px; margin-top: 10px;"></div>
 
     <script>
+        // Core Variables
         let fileHandle;
-        async function selectFile() {
-            [fileHandle] = await window.showOpenFilePicker();
-            let selectFileDiv = document.getElementById('select-file');
-            selectFileDiv.style = {display: 'none'};
-        };
+        let DETAIL = 0;
+        let SEARCHED_NAMES = new Set();
+        let PLAYERS = {};
+        let OUT = [];
 
-        // rsi_api.js
-        async function fetchCitizen(name, rsiUrl = "https://robertsspaceindustries.com/en", endpoint = 'citizens') {
-            const result = {};
-            const citizenUrl = `${rsiUrl}/${endpoint}/${name}`;
-            try {
-                const page = await fetch(citizenUrl, { mode: 'no-cors'});
-                if (page.status === 404) {
-                    return result;
-                }
-
-                result['handle'] = name;
-                result['url'] = citizenUrl;
-            } catch (e) {
-                console.error(e);
-            }
-            return result;
-        }
-
-        async function getPlayerInfo(handle) {
-            const playerInfo = await fetchCitizen(handle);
-
-            if (!playerInfo.url) {
-                return null;
-            }
-
-            return playerInfo;
-        }
-
-        // main.js
         const DETAIL_LIST = [
             'FULL',
             'KILL ONLY',
@@ -64,28 +38,14 @@
             'CONTESTED MODE WITH ACTOR STALL'
         ];
 
-        let DETAIL = 0; // Default value
-
-        const LINE_BLACKLIST = [
-            'SoundListener',
-            'Radiation_Hazard'
-        ];
-
-        const PLAYERS_BLACKLIST = [
-            'unknown',
-            'zimm1'
-        ];
-
-        let PLAYERS = {};
-        let SEARCHED_NAMES = new Set();
+        const LINE_BLACKLIST = ['SoundListener', 'Radiation_Hazard'];
+        const PLAYERS_BLACKLIST = ['unknown', 'zimm1'];
 
         const SUB_DICT = {
             'RastarInteriorGridHost': 'interior',
-            'StreamingSOC_hangar': (text) => {
+            'StreamingSOC_hangar': text => {
                 const parts = text.split("_");
-                const type = parts[2];
-                const location = parts[parts.length - 1];
-                return `hangar_${type}_${location}`;
+                return `hangar_${parts[2]}_${parts[parts.length - 1]}`;
             },
             'rstop_elev': 'elevator',
             'ksar_rifle_energy': 'karna',
@@ -105,82 +65,88 @@
             'rewards'
         ];
 
+        function getDateFromLine(line) {
+            return new Date(line.split(">")[0].slice(1));
+        }
+
+        function formatDatetimeAgo(date) {
+            const now = new Date();
+            let seconds = Math.floor((now - date) / 1000);
+            const h = Math.floor(seconds / 3600).toString().padStart(2, '0');
+            seconds %= 3600;
+            const m = Math.floor(seconds / 60).toString().padStart(2, '0');
+            const s = (seconds % 60).toString().padStart(2, '0');
+            return `${h}:${m}:${s}`;
+        }
+
+        function formatOutLine(outLine) {
+            return `${formatDatetimeAgo(outLine.date)} ${outLine.text}`;
+        }
+
+        function formatPlayers() {
+            return Object.values(PLAYERS)
+                .sort((a, b) => a.date - b.date)
+                .map(p => `${p.handle} <a target="_blank" href="${p.url}">${p.url}</a>`);
+        }
+
+        async function fetchCitizen(name) {
+            const url = `https://robertsspaceindustries.com/en/citizens/${name}`;
+            try {
+                const page = await fetch(url, { mode: 'no-cors' });
+                return { handle: name, url };
+            } catch (e) {
+                return {};
+            }
+        }
+
+        async function getPlayerInfo(handle) {
+            const info = await fetchCitizen(handle);
+            return info.url ? info : null;
+        }
 
         async function searchPlayer(name, date) {
-            if (PLAYERS_BLACKLIST.includes(name)) {
-                return;
-            }
-
-            if (name in PLAYERS) {
+            if (PLAYERS_BLACKLIST.includes(name)) return;
+            if (PLAYERS[name]) {
                 PLAYERS[name].date = date;
                 return;
             }
-
-            if (SEARCHED_NAMES.has(name)) {
-                return;
-            }
-
+            if (SEARCHED_NAMES.has(name)) return;
             SEARCHED_NAMES.add(name);
 
             const player = await getPlayerInfo(name);
-            
-            playerSearchCallback([player, date]);
-        }
-
-        function playerSearchCallback(data) {
-            const [player, date] = data;
-            console.log({player})
-
-            if (!player) {
-                return;
+            if (player) {
+                PLAYERS[player.handle] = { handle: player.handle, url: player.url, date };
             }
-
-            PLAYERS[player.handle] = {
-                handle: player.handle,
-                url: player.url,
-            };
         }
-
 
         async function subText(text, date) {
-            if (text.length > 0 && text[0] === '@') {
-                text = text.slice(1);
-            }
-
-            const subKey = Object.keys(SUB_DICT).find(key => text.includes(key));
+            if (text.startsWith('@')) text = text.slice(1);
+            const subKey = Object.keys(SUB_DICT).find(k => text.includes(k));
             if (subKey) {
-                const sub = SUB_DICT[subKey];
-                return `[${typeof sub === 'function' ? sub(text) : sub}]`;
+                const val = SUB_DICT[subKey];
+                return `[${typeof val === 'function' ? val(text) : val}]`;
             }
-
-            const parts = text.split("_");
-            if (parts.length >= 3 && parts[parts.length - 1].length >= 10 && !isNaN(parts[parts.length - 1])) {
-                text = parts.slice(0, -1).join("_");
-            } else if (date) {
-                await searchPlayer(text, date);
+            const parts = text.split('_');
+            if (parts.length >= 3 && parts.at(-1).length >= 10 && !isNaN(parts.at(-1))) {
+                return parts.slice(0, -1).join('_');
             }
-
+            // if (date) await searchPlayer(text, date);
             return text;
         }
 
-        function formatKill(contestedMode = false) {
-            return async function (line) {
+        function formatKill(contested = false) {
+            return async line => {
                 const date = getDateFromLine(line);
                 const parts = line.split("'");
                 const zone = await subText(parts[3]);
-                if (contestedMode && !CONTESTED_ZONE_MODE_ZONE_WHITELIST.some(contested => zone.includes(contested))) {
-                    return false;
-                }
-
+                if (contested && !CONTESTED_ZONE_MODE_ZONE_WHITELIST.some(z => zone.includes(z))) return false;
                 const killed = await subText(parts[1], date);
                 const killer = await subText(parts[5], date);
                 const weapon = await subText(parts[7]);
-
-                if (killed === killer && killer === weapon) {
-                    return `${killer} suicided in ${zone}`;
-                }
-
-                return `${killer} killed ${killed} with ${weapon} in ${zone}`;
+                const text = killed === killer && killer === weapon
+                    ? `${killer} suicided in ${zone}`
+                    : `${killer} killed ${killed} with ${weapon} in ${zone}`;
+                return { text, type: "kill", date, data: { killer, killed, weapon, zone } };
             };
         }
 
@@ -188,7 +154,7 @@
             '0 to 1': 'soft deathed',
             '1 to 2': 'kill confirmed',
             '0 to 2': 'exploded'
-        };
+        }
 
         async function formatDestroy(line) {
             const date = getDateFromLine(line);
@@ -197,229 +163,173 @@
             const driver = await subText(parts[5], date);
             const killer = await subText(parts[7], date);
             const method = await subText(parts[9]);
-
-            const stateMatch = line.match(/advanced from destroy level (.+) caused by/);
-            const state = stateMatch ? stateMatch[1] : null;
-            const formattedState = DESTROY_STATES[state] || state; // Handle potential missing states
-
-
-            return `vehicle ${vehicle} of ${driver} ${formattedState} by ${killer} with ${method}`;
+            const state = DESTROY_STATES[line.split("advanced from destroy level ")[1].split(" caused by")[0]];
+            return {
+                text: `${killer} ${state} ${vehicle} of ${driver} with ${method}`,
+                type: "destroy",
+                date,
+                data: { killer, vehicle, driver, method, state }
+            };
         }
-
 
         async function formatQt(line) {
             const date = getDateFromLine(line);
-            const name = await subText(line.split("-- Entity Trying To QT: ")[1]);
-            await subText(name, date);
-
-            return `${name} is in QT`;
+            const name = await subText(line.split("-- Entity Trying To QT: ")[1], date);
+            return { text: `${name} is in QT`, type: "qt", date, data: { name } };
         }
 
         async function formatActorStall(line) {
             const date = getDateFromLine(line);
-            const name = await subText(line.split("Actor stall detected, Player: ")[1].split(",")[0]);
-            await subText(name, date);
-
-            return `${name}: stall`;
+            const name = await subText(line.split("Actor stall detected, Player: ")[1].split(",")[0], date);
+            return { text: `${name}: stall`, type: "actor_stall", date, data: { name } };
         }
 
-        function formatEntityZone(entering) {
-            return async function (line) {
+        async function formatRespawn(line) {
+            const date = getDateFromLine(line);
+            const player = await subText(line.split("'")[1], date);
+            const hospital = await subText(line.split('"')[1]);
+            const location = await subText(line.split('"')[3]);
+            const inLocation = !line.includes("IS NOT");
+            return {
+                text: `${player} respawning at ${hospital} ${inLocation ? 'IN' : 'NOT IN'} ${location}`,
+                type: "respawn",
+                date,
+                data: { player, hospital, location, inLocation }
+            };
+        }
+
+        async function formatCorpse(line) {
+            const date = getDateFromLine(line);
+            const player = await subText(line.split("'")[1], date);
+            const hasCorpse = line.includes("IsCorpseEnabled: Y");
+            return {
+                text: `${player} corpse ${hasCorpse ? 'IS' : 'IS NOT'} LOOTABLE`,
+                type: "corpse",
+                date,
+                data: { player, hasCorpse }
+            };
+        }
+
+        async function formatCorpseMovable(line) {
+            const date = getDateFromLine(line);
+            const player = await subText(line.split("'")[1], date);
+            return {
+                text: `${player} corpse IS MOVABLE`,
+                type: "corpse_movable",
+                date,
+                data: { player }
+            };
+        }
+
+        async function formatSocial(line) {
+            const date = getDateFromLine(line);
+            const parts = line.split(":");
+            const player = await subText(parts[8].split(" ")[0], date);
+            return {
+                text: `Social: ${player}`,
+                type: "social",
+                date,
+                data: { player }
+            };
+        }
+
+         async function formatEntityZone(entering) {
+            return async line => {
                 const date = getDateFromLine(line);
                 const parts = line.split('[');
                 const location = await subText(parts[3].split(']')[0]);
                 const entity = await subText(parts[5].split(']')[0], date);
                 const owner = await subText(parts[9].split(']')[0], date);
-
-                return `${entity} ${entering ? 'entering' : 'exiting'} ${location} of ${owner}`;
+                return {
+                    text: `${entity} ${entering ? 'entering' : 'exiting'} ${location} of ${owner}`,
+                    type: "entity_zone",
+                    date,
+                    data: { entity, location, owner, entering }
+                };
             };
         }
 
-        function formatRespawn(alreadySeen = false) {
-            return async function (line) {
-                const date = getDateFromLine(line);
-                const player = line.split("'")[1];
-                if (alreadySeen && !(player in PLAYERS)) {
-                    return false;
-                }
-                const formattedPlayer = await subText(player, date);
-
-                const parts = line.split('"');
-                const hospital = await subText(parts[1]);
-                const location = await subText(parts[3]);
-                const inLocation = !line.includes('IS NOT');
-
-                return `${formattedPlayer} respawning at ${hospital} ${inLocation ? 'IN' : 'NOT IN'} ${location}`;
-            };
-        }
-
-        function formatCorpse(alreadySeen = false) {
-            return async function(line) {
-                const date = getDateFromLine(line);
-                const player = line.split("'")[1];
-                if (alreadySeen && !(player in PLAYERS)) {
-                    return false;
-                }
-                const formattedPlayer = await subText(player, date);
-        
-                const hasCorpse = line.includes('IsCorpseEnabled: Y');
-        
-                return `${formattedPlayer} corpse ${hasCorpse ? 'IS' : 'IS NOT'} LOOTABLE`;
-            };
-        }
-        
-        function formatCorpseMovable(alreadySeen = false) {
-            return async function(line) {
-                const date = getDateFromLine(line);
-                const player = line.split("'")[1];
-                if (alreadySeen && !(player in PLAYERS)) {
-                    return false;
-                }
-                const formattedPlayer = await subText(player, date);
-        
-                return `${formattedPlayer} corpse IS MOVABLE`;
-            };
-        }
-        
         const FORMAT_FN_DICT_LIST = [
             {
                 'CActor::Kill:': formatKill(),
                 'CVehicle::OnAdvanceDestroyLevel:': formatDestroy,
                 '-- Entity Trying To QT:': formatQt,
                 'Actor stall detected': formatActorStall,
+                'DoesLocationContainHospital: Nearby hospital': formatRespawn,
+                'IsCorpseEnabled: ': formatCorpse,
+                'Running corpsify for corpse': formatCorpseMovable,
+                '<OnMemberJoined -> Add member error>': formatSocial,
                 'OnEntityEnterZone': formatEntityZone(true),
-                'OnEntityLeaveZone': formatEntityZone(false),
-                'DoesLocationContainHospital: Nearby hospital': formatRespawn(false),
-                'IsCorpseEnabled: ': formatCorpse(false),
-                'Running corpsify for corpse': formatCorpseMovable(false)
+                'OnEntityLeaveZone': formatEntityZone(false)
             },
             {
                 'CActor::Kill:': formatKill(),
-                'CVehicle::OnAdvanceDestroyLevel:': formatDestroy,
-                'Actor stall detected': formatActorStall,
-                'DoesLocationContainHospital: Nearby hospital': formatRespawn(false),
-                'IsCorpseEnabled: ': formatCorpse(false),
-                'Running corpsify for corpse': formatCorpseMovable(false)
             },
             {
                 'CActor::Kill:': formatKill(true),
-                'DoesLocationContainHospital: Nearby hospital': formatRespawn(true),
-                'IsCorpseEnabled: ': formatCorpse(true),
-                'Running corpsify for corpse': formatCorpseMovable(true)
+                '-- Entity Trying To QT:': formatQt,
+                'CVehicle::OnAdvanceDestroyLevel:': formatDestroy
             },
             {
                 'CActor::Kill:': formatKill(true),
                 'Actor stall detected': formatActorStall,
-                'DoesLocationContainHospital: Nearby hospital': formatRespawn(true),
-                'IsCorpseEnabled: ': formatCorpse(true),
-                'Running corpsify for corpse': formatCorpseMovable(true)
+                'CVehicle::OnAdvanceDestroyLevel:': formatDestroy
             }
         ];
-        
-        function formatDatetime(line) {
-            const date = getDateFromLine(line);
-            return formatDatetimeAgo(date);
-        }
-        
-        function getDateFromLine(line) {
-            const lineDate = line.split(">")[0].slice(1); // Corrected slice
-            return new Date(lineDate); // Directly create Date object
-        }
-        
-        function formatDatetimeAgo(lastDate) {
-            const now = new Date();
-            const timeDelta = now - lastDate; // Milliseconds difference
-            let seconds = Math.floor((timeDelta / 1000)); // Corrected subtraction and floor
-        
-            const hours = Math.floor(seconds / 3600);
-            seconds %= 3600;
-            const minutes = Math.floor(seconds / 60);
-            seconds %= 60;
-        
-            return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-        }
-        
-        
-        function formatPlayers() {
-            const players = Object.values(PLAYERS);
-            players.sort((a, b) => a.date - b.date); // Corrected sort
-            return players.map(p => `${p.handle} (<a target=”_blank” href="${p.url}">${p.url}</a>)`);
-        }
-        
-        
-        // ... (No equivalent to setClickthrough in browser environment)
-        
-        function setupWindow(windowElement) {
-            windowElement.style.width = '100%';
-            windowElement.style.height = '150px';
-            
-            windowElement.style.fontFamily = "Helvetica";
-            windowElement.style.fontSize = "13px";
-            windowElement.style.overflowY = 'scroll'; // Add scrollbar
-        }
-        
-        
+
         async function updateWidgets() {
             DETAIL = parseInt(document.getElementById('detail').value) || 0;
-
             try {
                 const file = await fileHandle.getFile();
                 const contents = await file.text();
                 const lines = contents.split('\n');
-        
-                const out = [];
                 for (const line of lines) {
-                    if (LINE_BLACKLIST.some(entry => line.includes(entry))) {
-                        continue;
-                    }
-        
-                    const formatKey = Object.keys(FORMAT_FN_DICT_LIST[DETAIL]).find(key => line.includes(key));
-                    if (!formatKey) {
-                        continue;
-                    }
-        
-                    const date = formatDatetime(line);
-                    const text = await FORMAT_FN_DICT_LIST[DETAIL][formatKey](line);
-                    if (!text) {
-                        continue;
-                    }
-        
-                    out.push(`${date} ${text}`);
+                    if (LINE_BLACKLIST.some(x => line.includes(x))) continue;
+                    const key = Object.keys(FORMAT_FN_DICT_LIST[DETAIL]).find(k => line.includes(k));
+                    if (!key) continue;
+                    const data = await FORMAT_FN_DICT_LIST[DETAIL][key](line);
+                    if (!data) continue;
+                    const isDup = OUT.some(d => d.type === data.type && Math.abs(d.date - data.date) / 1000 <= 2 && JSON.stringify(d.data) === JSON.stringify(data.data));
+                    if (!isDup) OUT.push(data);
                 }
-        
-                if (out.length === 0) {
+                const mainDiv = document.getElementById('main-div');
+                mainDiv.innerHTML = OUT.map(formatOutLine).join('<br>');
+                mainDiv.scrollTop = mainDiv.scrollHeight;
+                const playerDiv = document.getElementById('player-div');
+                playerDiv.innerHTML = formatPlayers().join('<br>');
+                playerDiv.scrollTop = playerDiv.scrollHeight;
+                if (OUT.length === 0) {
                     SEARCHED_NAMES.clear();
                     PLAYERS = {};
                 }
-        
-                const mainDiv = document.getElementById('main-div');
-                mainDiv.innerHTML = out.join('<br>');
-                mainDiv.scrollTop = mainDiv.scrollHeight;
-
-                const playerDiv = document.getElementById('player-div')
-                playerDiv.innerHTML = formatPlayers().join('<br>');
-                playerDiv.scrollTop = playerDiv.scrollHeight;
-            } catch (err) {
-                if (err.name !== 'AbortError') {
-                    console.error('Error opening file:', err);
-                }
+            } catch (e) {
+                if (e.name !== 'AbortError') console.error('Error opening file:', e);
             }
-        
             setTimeout(updateWidgets, 1000);
         }
-        
-        // Initialization
-        async function initialize() {
-            // Get the detail level from URL parameters or use default
-            const urlParams = new URLSearchParams(window.location.search);
 
+        function setupWindow(el) {
+            el.style.width = '100%';
+            el.style.height = '150px';
+            el.style.fontFamily = 'Helvetica';
+            el.style.fontSize = '13px';
+            el.style.overflowY = 'scroll';
+        }
+
+        async function selectFile() {
+            [fileHandle] = await window.showOpenFilePicker();
+            document.getElementById('select-file').style.display = 'none';
+        }
+
+        async function initialize() {
             setupWindow(document.getElementById('main-div'));
             setupWindow(document.getElementById('player-div'));
-        
             await updateWidgets();
         }
-        
+
         initialize();
+
+
     </script>
 </body>
 
