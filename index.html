@@ -13,12 +13,6 @@
             border-color: #007ab8;
         }
 
-        #main-div div:hover,
-        #player-div a:hover {
-            background-color: #003f5c;
-            color: #ffffff;
-        }
-
         a {
             transition: background-color 0.2s ease, color 0.2s ease;
         }
@@ -81,15 +75,20 @@
         </select>
     </div>
 
-    <div style="display: flex; gap: 1rem;">
+    <div style="display: flex; gap: 0; flex-direction: row; align-items: stretch;">
+        <div style="flex: 1; display: flex; flex-direction: column;">
+            <div id="org-div"
+                style="flex: 1; display: flex; flex-direction: column; background: #121212; padding: 0.2rem 0.4rem; border-radius: 8px; max-height: 400px; overflow-y: auto; font-size: 0.9rem; line-height: 1.2; border: 1px solid #333; font-family: monospace;">
+            </div>
+        </div>
         <div style="flex: 3; display: flex; flex-direction: column;">
             <div id="main-div"
-                style="flex: 1; background: #121212; padding: 0.2rem 0.4rem; border-radius: 8px; max-height: 400px; overflow-y: auto; font-size: 0.9rem; line-height: 1.2; border: 1px solid #333; font-family: monospace; white-space: pre-wrap;">
+                style="flex: 1; display: flex; flex-direction: column; background: #121212; padding: 0.2rem 0.4rem; border-radius: 8px; max-height: 400px; overflow-y: auto; font-size: 0.9rem; line-height: 1.2; border: 1px solid #333; font-family: monospace; white-space: pre-wrap;">
             </div>
         </div>
         <div style="flex: 1; display: flex; flex-direction: column;">
             <div id="player-div"
-                style="flex: 1; background: #121212; padding: 0.2rem 0.4rem; border-radius: 8px; max-height: 400px; overflow-y: auto; font-size: 0.9rem; line-height: 1.2; border: 1px solid #333; font-family: monospace;">
+                style="flex: 1; display: flex; flex-direction: column; background: #121212; padding: 0.2rem 0.4rem; border-radius: 8px; max-height: 400px; overflow-y: auto; font-size: 0.9rem; line-height: 1.2; border: 1px solid #333; font-family: monospace;">
             </div>
         </div>
     </div>
@@ -148,6 +147,85 @@
             'rewards'
         ];
 
+        let searchQueue = [];
+        let isSearching = false;
+
+        function startQueueWorker() {
+            const interval = setInterval(async () => {
+                if (isSearching || searchQueue.length === 0) return;
+                isSearching = true;
+
+                const { name, date } = searchQueue.pop(); // LIFO
+                const player = await getPlayerInfo(name);
+                if (player) {
+                    PLAYERS[player.handle] = { ...player, date };
+                }
+
+                isSearching = false;
+            }, 500);
+        }
+
+        async function fetchHTMLWithAllOrigins(url) {
+            const proxiedUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
+
+            while (true) {
+                try {
+                    const res = await fetch(proxiedUrl);
+                    if (res.status === 429) {
+                        console.warn("Too many requests, retrying in 10 seconds...");
+                        await new Promise(resolve => setTimeout(resolve, 10000));
+                        continue;
+                    }
+                    if (!res.ok) throw new Error("Fetch failed");
+                    const text = await res.text();
+                    return new DOMParser().parseFromString(text, "text/html");
+                } catch (err) {
+                    console.error("Error during fetchHTMLWithAllOrigins:", err);
+                    await new Promise(resolve => setTimeout(resolve, 10000));
+                }
+            }
+        }
+
+        async function getPlayerInfo(handle) {
+            try {
+                const doc = await fetchHTMLWithAllOrigins(`https://robertsspaceindustries.com/citizens/${handle}`);
+                const profileLeft = doc.querySelectorAll('.profile-content .left-col .entry');
+
+                const enlisted = [...profileLeft].find(e => e.querySelector('span')?.textContent.includes('Enlisted'));
+                const location = [...profileLeft].find(e => e.querySelector('span')?.textContent.includes('Location'));
+                const fluency = [...profileLeft].find(e => e.querySelector('span')?.textContent.includes('Fluency'));
+
+                const orgsPage = await fetchHTMLWithAllOrigins(`https://robertsspaceindustries.com/citizens/${handle}/organizations`);
+                const orgBlocks = orgsPage.querySelectorAll('.orgs-content .org');
+
+                const orgs = [...orgBlocks].filter(org => !org.textContent.includes(' ')).map(org => {
+                    const name = org.querySelector('.value')?.textContent.trim();
+                    const sidEntry = [...org.querySelectorAll('p.entry')].find(p =>
+                        p.querySelector('span')?.textContent.includes('Spectrum Identification')
+                    );
+                    const sid = sidEntry?.querySelector('strong.value')?.textContent.trim();
+                    const url = sid ? `https://robertsspaceindustries.com/orgs/${sid}` : '#';
+                    const memberCount = parseInt(org.querySelector('.thumb span')?.textContent.split(" ")[0]) || 0;
+                    return { name, sid, memberCount, url };
+                });
+
+                const hasRedacted = [...orgBlocks].some(org => org.textContent.includes(' '));
+
+                return {
+                    handle,
+                    url: `https://robertsspaceindustries.com/citizens/${handle}`,
+                    enlisted: enlisted?.querySelector('.value')?.textContent.trim() ?? null,
+                    location: location?.querySelector('.value')?.textContent.trim() ?? '',
+                    languages: (fluency?.querySelector('.value')?.textContent ?? '').split(',').map(l => l.trim()).filter(l => l !== 'English'),
+                    has_redacted: hasRedacted,
+                    orgs
+                };
+            } catch (e) {
+                console.error(`Failed to fetch info for ${handle}`, e);
+                return null;
+            }
+        }
+
         function getDateFromLine(line) {
             return new Date(line.split(">")[0].slice(1));
         }
@@ -170,25 +248,11 @@
             return Object.values(PLAYERS)
                 .sort((a, b) => a.date - b.date)
                 .map(p => {
-                    const handle = p.url.replace('https://robertsspaceindustries.com/en/citizens/', '');
-                    return `<a href="${p.url}" target="_blank" style="color: #00b4ff; text-decoration: none; display: block; line-height: 1.2;">${handle}</a>`;
+                    const handleLink = `<a href="${p.url}" target="_blank" style="color: #00b4ff; text-decoration: none;">${p.handle}</a>`;
+                    const enlisted = p.enlisted ? new Date(p.enlisted).toLocaleDateString('en-US', { month: 'short', year: '2-digit' }) : '';
+                    const orgCount = p.orgs.length + (p.has_redacted ? '+R' : '');
+                    return `<div style="display: flex; flex-direction: row;">${handleLink}&nbsp;${enlisted} (${orgCount})</div>`;
                 });
-        }
-
-
-        async function fetchCitizen(name) {
-            const url = `https://robertsspaceindustries.com/en/citizens/${name}`;
-            try {
-                const page = await fetch(url, { mode: 'no-cors' });
-                return { handle: name, url };
-            } catch (e) {
-                return {};
-            }
-        }
-
-        async function getPlayerInfo(handle) {
-            const info = await fetchCitizen(handle);
-            return info.url ? info : null;
         }
 
         async function searchPlayer(name, date) {
@@ -200,10 +264,7 @@
             if (SEARCHED_NAMES.has(name)) return;
             SEARCHED_NAMES.add(name);
 
-            const player = await getPlayerInfo(name);
-            if (player) {
-                PLAYERS[player.handle] = { handle: player.handle, url: player.url, date };
-            }
+            searchQueue.push({ name, date });
         }
 
         async function subText(text, date) {
@@ -217,7 +278,7 @@
             if (parts.length >= 3 && parts.at(-1).length >= 10 && !isNaN(parts.at(-1))) {
                 return parts.slice(0, -1).join('_');
             }
-            if (date) await searchPlayer(text, date);
+            if (date) searchPlayer(text, date);
             return text;
         }
 
@@ -392,6 +453,27 @@
                 playerDiv.innerHTML = formatPlayers().join('');
                 playerDiv.scrollTop = playerDiv.scrollHeight;
 
+                const orgDiv = document.getElementById("org-div");
+                const orgs = {};
+                Object.values(PLAYERS).forEach(player => {
+                    player.orgs.forEach(org => {
+                        if (!orgs[org.sid]) {
+                            orgs[org.sid] = { ...org, players: [], date: player.date };
+                        }
+                        if (!orgs[org.sid].players.includes(player.handle)) {
+                            orgs[org.sid].players.push(player.handle);
+                        }
+                        if (player.date < orgs[org.sid].date) {
+                            orgs[org.sid].date = player.date;
+                        }
+                    });
+                });
+                const orgList = Object.values(orgs)
+                    .sort((a, b) => a.date - b.date || a.memberCount - b.memberCount)
+                    .map(org => `<div style="display: flex; flex-direction: row;"><a href='${org.url}' target='_blank' style='color: #00b4ff;'>${org.name}</a>&nbsp;(${org.players.length}/${org.memberCount}) [${org.players.join(', ')}]</div>`);
+                orgDiv.innerHTML = orgList.join('');
+                orgDiv.scrollTop = orgDiv.scrollHeight;
+
                 if (OUT.length === 0) {
                     SEARCHED_NAMES.clear();
                     PLAYERS = {};
@@ -427,6 +509,7 @@
             setupWindow(document.getElementById('main-div'));
             setupWindow(document.getElementById('player-div'));
             await updateWidgets();
+            startQueueWorker();
         }
 
         initialize();
