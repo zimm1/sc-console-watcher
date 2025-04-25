@@ -2,6 +2,12 @@
 <html>
 
 <body style="font-family: 'Arial', sans-serif; background-color: #0c0c0c; color: #f0f0f0; padding: 2rem;">
+
+    <head>
+        <title>SC Console Watcher</title>
+        <link rel="icon" type="image/x-icon" href="/favicon.ico?v=1">
+    </head>
+
     <style>
         button {
             transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
@@ -91,13 +97,14 @@
                 Administrator)</strong>:
         </p>
         <p style="font-size: 0.85rem; color: #888; margin-top: -10px; margin-bottom: 10px;">
-            To open an elevated Command Prompt: Press <kbd>Start</kbd>, type <kbd>cmd</kbd>, then right-click <em>Command
+            To open an elevated Command Prompt: Press <kbd>Start</kbd>, type <kbd>cmd</kbd>, then right-click
+            <em>Command
                 Prompt</em> and choose <strong>Run as administrator</strong>.
         </p>
         <pre
             style="background-color: #1a1a1a; padding: 1rem; color: #ccc; border-radius: 5px;">mklink /h "C:\\Users\\YourUser\\Downloads\\Game.log" "C:\\Program Files\\Roberts Space Industries\\StarCitizen\\LIVE\\Game.log"</pre>
         <p style="color: #aaa; margin-bottom: 1rem;">Once the link is created, select the new file location below:</p>
-    
+
         <button onclick="selectFile()"
             style="padding: 0.5rem 1rem; background: #00b4ff; color: black; border: none; border-radius: 5px; font-weight: bold; cursor: pointer;">Choose
             Game.log file</button>
