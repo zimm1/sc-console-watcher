@@ -76,20 +76,14 @@
     </div>
 
     <div style="display: flex; gap: 0; flex-direction: row; align-items: stretch;">
-        <div style="flex: 1; display: flex; flex-direction: column;">
-            <div id="org-div"
-                style="flex: 1; display: flex; flex-direction: column; background: #121212; padding: 0.2rem 0.4rem; border-radius: 8px; max-height: 400px; overflow-y: auto; font-size: 0.9rem; line-height: 1.2; border: 1px solid #333; font-family: monospace;">
-            </div>
+        <div id="org-div"
+            style="flex: 1; display: block; background: #121212; padding: 0.2rem 0.4rem; border-radius: 8px; height: 400px; max-height: 400px; overflow-y: auto; font-size: 0.9rem; line-height: 1.2; border: 1px solid #333; font-family: monospace;">
         </div>
-        <div style="flex: 3; display: flex; flex-direction: column;">
-            <div id="main-div"
-                style="flex: 1; display: flex; flex-direction: column; background: #121212; padding: 0.2rem 0.4rem; border-radius: 8px; max-height: 400px; overflow-y: auto; font-size: 0.9rem; line-height: 1.2; border: 1px solid #333; font-family: monospace; white-space: pre-wrap;">
-            </div>
+        <div id="main-div"
+            style="flex: 3; display: block; background: #121212; padding: 0.2rem 0.4rem; border-radius: 8px; height: 400px; max-height: 400px; overflow-y: auto; font-size: 0.9rem; line-height: 1.2; border: 1px solid #333; font-family: monospace;">
         </div>
-        <div style="flex: 1; display: flex; flex-direction: column;">
-            <div id="player-div"
-                style="flex: 1; display: flex; flex-direction: column; background: #121212; padding: 0.2rem 0.4rem; border-radius: 8px; max-height: 400px; overflow-y: auto; font-size: 0.9rem; line-height: 1.2; border: 1px solid #333; font-family: monospace;">
-            </div>
+        <div id="player-div"
+            style="flex: 1; display: block; background: #121212; padding: 0.2rem 0.4rem; border-radius: 8px; height: 400px; max-height: 400px; overflow-y: auto; font-size: 0.9rem; line-height: 1.2; border: 1px solid #333; font-family: monospace;">
         </div>
     </div>
 
@@ -251,8 +245,29 @@
                     const handleLink = `<a href="${p.url}" target="_blank" style="color: #00b4ff; text-decoration: none;">${p.handle}</a>`;
                     const enlisted = p.enlisted ? new Date(p.enlisted).toLocaleDateString('en-US', { month: 'short', year: '2-digit' }) : '';
                     const orgCount = p.orgs.length + (p.has_redacted ? '+R' : '');
-                    return `<div style="display: flex; flex-direction: row;">${handleLink}&nbsp;${enlisted} (${orgCount})</div>`;
+                    return `<div style="display: block;">${handleLink}&nbsp;${enlisted} (${orgCount})</div>`;
                 });
+        }
+
+        function formatOrgs() {
+            const orgs = {};
+            Object.values(PLAYERS).forEach(player => {
+                player.orgs.forEach(org => {
+                    if (!orgs[org.sid]) {
+                        orgs[org.sid] = { ...org, players: [], date: player.date };
+                    }
+                    if (!orgs[org.sid].players.includes(player.handle)) {
+                        orgs[org.sid].players.push(player.handle);
+                    }
+                    if (player.date < orgs[org.sid].date) {
+                        orgs[org.sid].date = player.date;
+                    }
+                });
+            });
+
+            return Object.values(orgs)
+                .sort((a, b) => a.date - b.date || a.memberCount - b.memberCount)
+                .map(org => `<div style="display: block;"><a href='${org.url}' target='_blank' style='color: #00b4ff;'>${org.name}</a>&nbsp;(${org.players.length}/${org.memberCount}) [${org.players.join(', ')}]</div>`);
         }
 
         async function searchPlayer(name, date) {
@@ -454,24 +469,7 @@
                 playerDiv.scrollTop = playerDiv.scrollHeight;
 
                 const orgDiv = document.getElementById("org-div");
-                const orgs = {};
-                Object.values(PLAYERS).forEach(player => {
-                    player.orgs.forEach(org => {
-                        if (!orgs[org.sid]) {
-                            orgs[org.sid] = { ...org, players: [], date: player.date };
-                        }
-                        if (!orgs[org.sid].players.includes(player.handle)) {
-                            orgs[org.sid].players.push(player.handle);
-                        }
-                        if (player.date < orgs[org.sid].date) {
-                            orgs[org.sid].date = player.date;
-                        }
-                    });
-                });
-                const orgList = Object.values(orgs)
-                    .sort((a, b) => a.date - b.date || a.memberCount - b.memberCount)
-                    .map(org => `<div style="display: flex; flex-direction: row;"><a href='${org.url}' target='_blank' style='color: #00b4ff;'>${org.name}</a>&nbsp;(${org.players.length}/${org.memberCount}) [${org.players.join(', ')}]</div>`);
-                orgDiv.innerHTML = orgList.join('');
+                orgDiv.innerHTML = formatOrgs().join('');
                 orgDiv.scrollTop = orgDiv.scrollHeight;
 
                 if (OUT.length === 0) {
@@ -492,22 +490,12 @@
             setTimeout(updateWidgets, 1000);
         }
 
-        function setupWindow(el) {
-            el.style.width = '100%';
-            el.style.height = '150px';
-            el.style.fontFamily = 'Helvetica';
-            el.style.fontSize = '13px';
-            el.style.overflowY = 'scroll';
-        }
-
         async function selectFile() {
             [fileHandle] = await window.showOpenFilePicker();
             document.getElementById('select-file').style.display = 'none';
         }
 
         async function initialize() {
-            setupWindow(document.getElementById('main-div'));
-            setupWindow(document.getElementById('player-div'));
             await updateWidgets();
             startQueueWorker();
         }
