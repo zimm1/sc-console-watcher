@@ -44,23 +44,60 @@
                 transform: rotate(360deg);
             }
         }
+
+        .output-container {
+            position: relative;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background: #121212;
+            padding: 0.2rem 0.4rem;
+            border-radius: 8px;
+            height: 400px;
+            max-height: 400px;
+            overflow-y: auto;
+            font-size: 0.9rem;
+            line-height: 1.2;
+            border: 1px solid #333;
+            font-family: monospace;
+        }
+
+        .autoscroll-checkbox {
+            position: sticky;
+            top: 0;
+            right: 0;
+            padding: 0.2rem;
+            font-size: 0.75rem;
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            z-index: 1;
+        }
+
+        .autoscroll-checkbox-label {
+            background: #121212;
+        }
+
+        .output-content {
+            flex-grow: 1;
+        }
     </style>
 
-    <h2 style="color: #00b4ff;">Select your <code>Game.log</code> file:</h2>
-    <p style="font-size: 0.9rem; color: #bbb;">
-        If your game is in the default location and an error appears, create a hard link to a readable location like
-        your Downloads folder. <strong>This command must be run from an elevated Command Prompt (Run as
-            Administrator)</strong>:
-    </p>
-    <p style="font-size: 0.85rem; color: #888; margin-top: -10px; margin-bottom: 10px;">
-        To open an elevated Command Prompt: Press <kbd>Start</kbd>, type <kbd>cmd</kbd>, then right-click <em>Command
-            Prompt</em> and choose <strong>Run as administrator</strong>.
-    </p>
-    <pre
-        style="background-color: #1a1a1a; padding: 1rem; color: #ccc; border-radius: 5px;">mklink /h "C:\\Users\\YourUser\\Downloads\\Game.log" "C:\\Program Files\\Roberts Space Industries\\StarCitizen\\LIVE\\Game.log"</pre>
-    <p style="color: #aaa; margin-bottom: 1rem;">Once the link is created, select the new file location below:</p>
-
     <div id="select-file" style="margin-bottom: 2rem;">
+        <h2 style="color: #00b4ff;">Select your <code>Game.log</code> file:</h2>
+        <p style="font-size: 0.9rem; color: #bbb;">
+            If your game is in the default location and an error appears, create a hard link to a readable location like
+            your Downloads folder. <strong>This command must be run from an elevated Command Prompt (Run as
+                Administrator)</strong>:
+        </p>
+        <p style="font-size: 0.85rem; color: #888; margin-top: -10px; margin-bottom: 10px;">
+            To open an elevated Command Prompt: Press <kbd>Start</kbd>, type <kbd>cmd</kbd>, then right-click <em>Command
+                Prompt</em> and choose <strong>Run as administrator</strong>.
+        </p>
+        <pre
+            style="background-color: #1a1a1a; padding: 1rem; color: #ccc; border-radius: 5px;">mklink /h "C:\\Users\\YourUser\\Downloads\\Game.log" "C:\\Program Files\\Roberts Space Industries\\StarCitizen\\LIVE\\Game.log"</pre>
+        <p style="color: #aaa; margin-bottom: 1rem;">Once the link is created, select the new file location below:</p>
+    
         <button onclick="selectFile()"
             style="padding: 0.5rem 1rem; background: #00b4ff; color: black; border: none; border-radius: 5px; font-weight: bold; cursor: pointer;">Choose
             Game.log file</button>
@@ -75,15 +112,29 @@
         </select>
     </div>
 
-    <div style="display: flex; gap: 0; flex-direction: row; align-items: stretch;">
-        <div id="org-div"
-            style="flex: 1; display: block; background: #121212; padding: 0.2rem 0.4rem; border-radius: 8px; height: 400px; max-height: 400px; overflow-y: auto; font-size: 0.9rem; line-height: 1.2; border: 1px solid #333; font-family: monospace;">
+    <div id="output-divs" style="display: none; gap: 0; flex-direction: row; align-items: stretch;">
+        <div class="output-container" id="main-div" style="flex: 3">
+            <div class="autoscroll-checkbox">
+                <label class="autoscroll-checkbox-label"><input type="checkbox" id="main-autoscroll" checked>
+                    Autoscroll</label>
+            </div>
+            <div class="output-content" id="main-content"></div>
         </div>
-        <div id="main-div"
-            style="flex: 3; display: block; background: #121212; padding: 0.2rem 0.4rem; border-radius: 8px; height: 400px; max-height: 400px; overflow-y: auto; font-size: 0.9rem; line-height: 1.2; border: 1px solid #333; font-family: monospace;">
+
+        <div class="output-container" id="player-div" style="flex: 2">
+            <div class="autoscroll-checkbox">
+                <label class="autoscroll-checkbox-label"><input type="checkbox" id="player-autoscroll" checked>
+                    Autoscroll</label>
+            </div>
+            <div class="output-content" id="player-content"></div>
         </div>
-        <div id="player-div"
-            style="flex: 1; display: block; background: #121212; padding: 0.2rem 0.4rem; border-radius: 8px; height: 400px; max-height: 400px; overflow-y: auto; font-size: 0.9rem; line-height: 1.2; border: 1px solid #333; font-family: monospace;">
+
+        <div class="output-container" id="org-div" style="flex: 2">
+            <div class="autoscroll-checkbox">
+                <label class="autoscroll-checkbox-label"><input type="checkbox" id="org-autoscroll" checked>
+                    Autoscroll</label>
+            </div>
+            <div class="output-content" id="org-content"></div>
         </div>
     </div>
 
@@ -99,6 +150,34 @@
     </div>
 
     <script>
+        const autoscrollSettings = {
+            'org-div': true,
+            'main-div': true,
+            'player-div': true
+        };
+
+        function setupAutoscroll(divId, checkboxId, contentId) {
+            const div = document.getElementById(divId);
+            const checkbox = document.getElementById(checkboxId);
+            const content = document.getElementById(contentId);
+
+            checkbox.addEventListener('change', () => {
+                autoscrollSettings[divId] = checkbox.checked;
+            });
+
+            div.addEventListener('scroll', () => {
+                const nearBottom = div.scrollTop + div.clientHeight >= div.scrollHeight - 5;
+                autoscrollSettings[divId] = nearBottom;
+                checkbox.checked = nearBottom;
+            });
+
+            return { div, content };
+        }
+
+        const org = setupAutoscroll('org-div', 'org-autoscroll', 'org-content');
+        const main = setupAutoscroll('main-div', 'main-autoscroll', 'main-content');
+        const player = setupAutoscroll('player-div', 'player-autoscroll', 'player-content');
+
         // Core Variables
         let fileHandle;
         let DETAIL = 0;
@@ -210,7 +289,7 @@
                     url: `https://robertsspaceindustries.com/citizens/${handle}`,
                     enlisted: enlisted?.querySelector('.value')?.textContent.trim() ?? null,
                     location: location?.querySelector('.value')?.textContent.trim() ?? '',
-                    languages: (fluency?.querySelector('.value')?.textContent ?? '').split(',').map(l => l.trim()).filter(l => l !== 'English'),
+                    languages: (fluency?.querySelector('.value')?.textContent ?? '').split(',').map(l => l.trim()).filter(l => l !== 'English') ?? [],
                     has_redacted: hasRedacted,
                     orgs
                 };
@@ -243,9 +322,10 @@
                 .sort((a, b) => a.date - b.date)
                 .map(p => {
                     const handleLink = `<a href="${p.url}" target="_blank" style="color: #00b4ff; text-decoration: none;">${p.handle}</a>`;
-                    const enlisted = p.enlisted ? new Date(p.enlisted).toLocaleDateString('en-US', { month: 'short', year: '2-digit' }) : '';
+                    const enlisted = p.enlisted ? new Date(p.enlisted).toLocaleDateString('en-US', { month: 'short', year: '2-digit' }).replace(' ', '') : '';
                     const orgCount = p.orgs.length + (p.has_redacted ? '+R' : '');
-                    return `<div style="display: block;">${handleLink}&nbsp;${enlisted} (${orgCount})</div>`;
+                    const location = p.location.split(',')[0] || p.languages.join(',') || '';
+                    return `<div style="display: block;">${handleLink}&nbsp;${enlisted} (${orgCount}) ${location}</div>`;
                 });
         }
 
@@ -442,6 +522,10 @@
             const spinner = document.getElementById('spinner');
 
             try {
+                if (!fileHandle) {
+                    return;
+                }
+
                 const file = await fileHandle.getFile();
                 const contents = await file.text();
                 const lines = contents.split('\n');
@@ -460,17 +544,13 @@
                     if (!isDup) OUT.push(data);
                 }
 
-                const mainDiv = document.getElementById('main-div');
-                mainDiv.innerHTML = OUT.map(formatOutLine).join('<br>');
-                mainDiv.scrollTop = mainDiv.scrollHeight;
+                main.content.innerHTML = OUT.map(formatOutLine).join('<br>');
+                player.content.innerHTML = formatPlayers().join('');
+                org.content.innerHTML = formatOrgs().join('');
 
-                const playerDiv = document.getElementById('player-div');
-                playerDiv.innerHTML = formatPlayers().join('');
-                playerDiv.scrollTop = playerDiv.scrollHeight;
-
-                const orgDiv = document.getElementById("org-div");
-                orgDiv.innerHTML = formatOrgs().join('');
-                orgDiv.scrollTop = orgDiv.scrollHeight;
+                if (autoscrollSettings['org-div']) org.div.scrollTop = org.div.scrollHeight;
+                if (autoscrollSettings['main-div']) main.div.scrollTop = main.div.scrollHeight;
+                if (autoscrollSettings['player-div']) player.div.scrollTop = player.div.scrollHeight;
 
                 if (OUT.length === 0) {
                     SEARCHED_NAMES.clear();
@@ -485,14 +565,15 @@
 
             } catch (e) {
                 if (e.name !== 'AbortError') console.error('Error opening file:', e);
+            } finally {
+                setTimeout(updateWidgets, 1000);
             }
-
-            setTimeout(updateWidgets, 1000);
         }
 
         async function selectFile() {
             [fileHandle] = await window.showOpenFilePicker();
             document.getElementById('select-file').style.display = 'none';
+            document.getElementById('output-divs').style.display = 'flex';
         }
 
         async function initialize() {
