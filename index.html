@@ -239,6 +239,7 @@
                 const player = await getPlayerInfo(name);
                 if (player) {
                     PLAYERS[player.handle] = { ...player, date };
+                    SEARCHED_NAMES.add(name);
                 }
 
                 isSearching = false;
@@ -346,14 +347,14 @@
                     if (!orgs[org.sid].players.includes(player.handle)) {
                         orgs[org.sid].players.push(player.handle);
                     }
-                    if (player.date < orgs[org.sid].date) {
+                    if (player.date > orgs[org.sid].date) {
                         orgs[org.sid].date = player.date;
                     }
                 });
             });
 
             return Object.values(orgs)
-                .sort((a, b) => a.date - b.date || a.memberCount - b.memberCount)
+                .sort((a, b) => a.date - b.date || a.players.length - b.players.length || b.memberCount - a.memberCount)
                 .map(org => `<div style="display: block;"><a href='${org.url}' target='_blank' style='color: #00b4ff; text-decoration: none;'>${org.name}</a>&nbsp;(${org.players.length}/${org.memberCount}) [${org.players.join(', ')}]</div>`);
         }
 
@@ -363,9 +364,11 @@
                 PLAYERS[name].date = date;
                 return;
             }
-            if (SEARCHED_NAMES.has(name)) return;
-            SEARCHED_NAMES.add(name);
+            if (SEARCHED_NAMES.has(name)) {
+                return;
+            }
 
+            searchQueue = searchQueue.filter(e => e.name != name)
             searchQueue.push({ name, date });
         }
 
