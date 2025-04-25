@@ -354,7 +354,7 @@
 
             return Object.values(orgs)
                 .sort((a, b) => a.date - b.date || a.memberCount - b.memberCount)
-                .map(org => `<div style="display: block;"><a href='${org.url}' target='_blank' style='color: #00b4ff;'>${org.name}</a>&nbsp;(${org.players.length}/${org.memberCount}) [${org.players.join(', ')}]</div>`);
+                .map(org => `<div style="display: block;"><a href='${org.url}' target='_blank' style='color: #00b4ff; text-decoration: none;'>${org.name}</a>&nbsp;(${org.players.length}/${org.memberCount}) [${org.players.join(', ')}]</div>`);
         }
 
         async function searchPlayer(name, date) {
