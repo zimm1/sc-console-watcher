@@ -20,7 +20,7 @@
         }
 
         a {
-            transition: background-color 0.2s ease, color 0.2s ease;
+            transition: background-color 0.2s ease, color: 0.2s ease;
         }
 
         a:hover {
@@ -86,6 +86,39 @@
 
         .output-content {
             flex-grow: 1;
+        }
+
+        .search-spinner {
+            display: inline-block;
+            width: 14px;
+            height: 14px;
+            border: 2px solid #ccc;
+            border-top-color: #00b4ff;
+            border-radius: 50%;
+            animation: spin 0.6s linear infinite;
+            margin-left: 8px;
+        }
+
+        .search-status {
+            animation: fade 2s ease-in-out forwards;
+        }
+
+        @keyframes fade {
+            0% {
+                opacity: 0;
+            }
+
+            25% {
+                opacity: 1;
+            }
+
+            75% {
+                opacity: 1;
+            }
+
+            100% {
+                opacity: 0;
+            }
         }
     </style>
 
@@ -597,12 +630,36 @@
         }
 
         function manualSearch() {
-            const name = document.getElementById('manual-search').value.trim();
-            if (name) {
-                searchPlayer(name, new Date());
-                document.getElementById('manual-search').value = '';
-                MANUAL_SEARCHED_NAMES.add(name);
-            }
+            const input = document.getElementById('manual-search');
+            const button = input.nextElementSibling;
+            const name = input.value.trim();
+            if (!name) return;
+
+            input.disabled = true;
+            button.disabled = true;
+            const originalHTML = button.innerHTML;
+            const buttonWidth = button.offsetWidth;
+
+            button.style.width = buttonWidth + 'px';
+            button.innerHTML = `<span style='display: inline-flex; align-items: center; height: 1em;'><span class="search-spinner"></span></span>`;
+
+            (async () => {
+                const player = await getPlayerInfo(name);
+                if (player) {
+                    PLAYERS[player.handle] = { ...player, date: new Date() };
+                    MANUAL_SEARCHED_NAMES.add(player.handle);
+                }
+                input.value = '';
+                input.disabled = false;
+                button.disabled = false;
+                button.innerHTML = player
+                    ? '<span class="search-status" style="display: inline-block;min-width: 1em;text-align: center;line-height: 1;background:#00b56f;color:white;padding:0 0.5rem;border-radius:4px;">✓</span>'
+                    : '<span class="search-status" style="display: inline-block;min-width: 1em;text-align: center;line-height: 1;color:#ff4444;padding:0 0.5rem;">✕</span>';
+                setTimeout(() => {
+                    button.innerHTML = originalHTML;
+                    button.style.width = '';
+                }, 2000);
+            })();
         }
 
         async function initialize() {
