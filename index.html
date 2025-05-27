@@ -134,6 +134,14 @@
                     Autoscroll</label>
             </div>
             <div class="output-content" id="player-content"></div>
+
+            <div style="margin-top: 0.5rem; display: flex; gap: 0.5rem; align-items: center;">
+                <input type="text" id="manual-search" placeholder="Search for a player"
+                    onkeypress="if(event.key === 'Enter') manualSearch();"
+                    style="flex: 1; padding: 0.4rem; border-radius: 4px; border: 1px solid #444; background-color: #1a1a1a; color: #f0f0f0; font-family: monospace; font-size: 0.85rem;">
+                <button onclick="manualSearch()"
+                    style="padding: 0.4rem 1rem; background: #00b4ff; color: black; border: none; border-radius: 5px; font-weight: bold; cursor: pointer;">Search</button>
+            </div>
         </div>
 
         <div class="output-container" id="org-div" style="flex: 2">
@@ -189,6 +197,7 @@
         let fileHandle;
         let DETAIL = 0;
         let SEARCHED_NAMES = new Set();
+        let MANUAL_SEARCHED_NAMES = new Set();
         let PLAYERS = {};
         let OUT = [];
         let firstSuccessfulRead = true;
@@ -332,8 +341,9 @@
                     const handleLink = `<a href="${p.url}" target="_blank" style="color: #00b4ff; text-decoration: none;">${p.handle}</a>`;
                     const enlisted = p.enlisted ? new Date(p.enlisted).toLocaleDateString('en-US', { month: 'short', year: '2-digit' }).replace(' ', '') : '';
                     const orgCount = p.orgs.length + (p.has_redacted ? '+R' : '');
-                    const location = p.location.split(',')[0] || p.languages.join(',') || '';
-                    return `<div style="display: block;">${handleLink}&nbsp;${enlisted} (${orgCount}) ${location}</div>`;
+                    const location = (' ' + p.location.split(',')[0]) || (' ' + p.languages.join(',')) || '';
+                    const emoji = MANUAL_SEARCHED_NAMES.has(p.handle) ? ' 🔍' : '';
+                    return `<div style="display: block;">${handleLink}&nbsp;${enlisted} (${orgCount})${location}${emoji}</div>`;
                 });
         }
 
@@ -360,7 +370,7 @@
 
         async function searchPlayer(name, date) {
             if (PLAYERS_BLACKLIST.includes(name)) return;
-            if (PLAYERS[name]) {
+            if (PLAYERS[name] && date > PLAYERS[name].date) {
                 PLAYERS[name].date = date;
                 return;
             }
@@ -584,6 +594,15 @@
             [fileHandle] = await window.showOpenFilePicker();
             document.getElementById('select-file').style.display = 'none';
             document.getElementById('output-divs').style.display = 'flex';
+        }
+
+        function manualSearch() {
+            const name = document.getElementById('manual-search').value.trim();
+            if (name) {
+                searchPlayer(name, new Date());
+                document.getElementById('manual-search').value = '';
+                MANUAL_SEARCHED_NAMES.add(name);
+            }
         }
 
         async function initialize() {
