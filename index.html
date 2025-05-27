@@ -280,7 +280,7 @@
                 const { name, date } = searchQueue.pop(); // LIFO
                 const player = await getPlayerInfo(name);
                 if (player) {
-                    PLAYERS[player.handle] = { ...player, date };
+                    PLAYERS[player.displayName] = { ...player, date };
                     SEARCHED_NAMES.add(name);
                 }
 
@@ -314,6 +314,14 @@
                 const doc = await fetchHTMLWithAllOrigins(`https://robertsspaceindustries.com/citizens/${handle}`);
                 const profileLeft = doc.querySelectorAll('.profile-content .left-col .entry');
 
+                const displayName = [...doc.querySelectorAll('.entry')]
+                    .find(e => e.querySelector('.label')?.textContent.trim() === 'Handle name')
+                    ?.querySelector('.value')?.textContent.trim()
+
+                if (!displayName) {
+                    throw new Error("Player not found");
+                }
+
                 const enlisted = [...profileLeft].find(e => e.querySelector('span')?.textContent.includes('Enlisted'));
                 const location = [...profileLeft].find(e => e.querySelector('span')?.textContent.includes('Location'));
                 const fluency = [...profileLeft].find(e => e.querySelector('span')?.textContent.includes('Fluency'));
@@ -336,6 +344,7 @@
 
                 return {
                     handle,
+                    displayName,
                     url: `https://robertsspaceindustries.com/citizens/${handle}`,
                     enlisted: enlisted?.querySelector('.value')?.textContent.trim() ?? null,
                     location: location?.querySelector('.value')?.textContent.trim() ?? '',
@@ -371,11 +380,11 @@
             return Object.values(PLAYERS)
                 .sort((a, b) => a.date - b.date)
                 .map(p => {
-                    const handleLink = `<a href="${p.url}" target="_blank" style="color: #00b4ff; text-decoration: none;">${p.handle}</a>`;
+                    const handleLink = `<a href="${p.url}" target="_blank" style="color: #00b4ff; text-decoration: none;">${p.displayName}</a>`;
                     const enlisted = p.enlisted ? new Date(p.enlisted).toLocaleDateString('en-US', { month: 'short', year: '2-digit' }).replace(' ', '') : '';
                     const orgCount = p.orgs.length + (p.has_redacted ? '+R' : '');
                     const location = (' ' + p.location.split(',')[0]) || (' ' + p.languages.join(',')) || '';
-                    const emoji = MANUAL_SEARCHED_NAMES.has(p.handle) ? ' 🔍' : '';
+                    const emoji = MANUAL_SEARCHED_NAMES.has(p.displayName) ? ' 🔍' : '';
                     return `<div style="display: block;">${handleLink}&nbsp;${enlisted} (${orgCount})${location}${emoji}</div>`;
                 });
         }
@@ -646,8 +655,8 @@
             (async () => {
                 const player = await getPlayerInfo(name);
                 if (player) {
-                    PLAYERS[player.handle] = { ...player, date: new Date() };
-                    MANUAL_SEARCHED_NAMES.add(player.handle);
+                    PLAYERS[player.displayName] = { ...player, date: new Date() };
+                    MANUAL_SEARCHED_NAMES.add(player.displayName);
                 }
                 input.value = '';
                 input.disabled = false;
