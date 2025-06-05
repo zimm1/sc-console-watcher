@@ -383,7 +383,7 @@
                     const handleLink = `<a href="${p.url}" target="_blank" style="color: #00b4ff; text-decoration: none;">${p.displayName}</a>`;
                     const enlisted = p.enlisted ? new Date(p.enlisted).toLocaleDateString('en-US', { month: 'short', year: '2-digit' }).replace(' ', '') : '';
                     const orgCount = p.orgs.length + (p.has_redacted ? '+R' : '');
-                    const location = (' ' + p.location.split(',')[0]) || (' ' + p.languages.join(',')) || '';
+                    const location = p.location.split(',')[0] ? (' ' + p.location.split(',')[0]) : ((' ' + p.languages.join(',')) || '');
                     const emoji = MANUAL_SEARCHED_NAMES.has(p.displayName) ? ' 🔍' : '';
                     return `<div style="display: block;">${handleLink}&nbsp;${enlisted} (${orgCount})${location}${emoji}</div>`;
                 });
