@@ -396,8 +396,8 @@
                     if (!orgs[org.sid]) {
                         orgs[org.sid] = { ...org, players: [], date: player.date };
                     }
-                    if (!orgs[org.sid].players.includes(player.handle)) {
-                        orgs[org.sid].players.push(player.handle);
+                    if (!orgs[org.sid].players.includes(player.displayName)) {
+                        orgs[org.sid].players.push(player.displayName);
                     }
                     if (player.date > orgs[org.sid].date) {
                         orgs[org.sid].date = player.date;
